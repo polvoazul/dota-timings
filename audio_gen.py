@@ -28,7 +28,7 @@ def make_structure():
         structure += [Play(sound, end=time) for time in times]
     structure = sorted(structure, key=lambda play: play.end)
 
-    for play, last_play in zip_longest(structure, [None] + structure):
+    for play, last_play in zip(structure, [None] + structure):
         play.end -= CONFIG['precursor_absolute']
         if last_play and last_play.begin <= play.end <= last_play.end:
             play.end = last_play.begin - CONFIG['interval_between_conflicts']
@@ -80,4 +80,5 @@ TIMINGS = {
     'neutral_items_5': at(60),
 }
 
-main()
+if __name__ == '__main__':
+    main()
