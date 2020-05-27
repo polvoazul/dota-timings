@@ -7,33 +7,57 @@ import random
 from dataclasses import dataclass
 from itertools import zip_longest
 
-random.seed(42)
 
 MINUTE, SECOND = 60_000, 1_000
 
 
-def main():
+def main(seed=None):
+    seed = seed or random.randint(100, 999)
+    random.seed(seed)
     structure = make_structure()
     pprint(structure)
-    return
+    print('\ncompiling...\n')
     audio = compile(structure)
-    canvas = AudioSegment.silent(MINUTE * 65)
-    canvas = canvas.overlay(sound, position)
-    canvas
+    filename = f'out-{seed}.mp3'
+    print(f'exporting {filename}')
+    audio.export(f'out/{filename}', 'mp3')
+    breakpoint()
+
+def compile(structure):
+    output = AudioSegment.empty()
+    cursor = -1 * MINUTE
+    for play in structure:
+        output = output.append(AudioSegment.silent(play.begin - cursor), crossfade=0)
+        print(f'added {(play.begin - cursor) // 1000} seconds of silence')
+        output = output.append(play.sound.audio, crossfade=3)
+        print(play)
+        cursor = play.end
+    return output
 
 def make_structure():
     structure = []
     for sound, times in TIMINGS.items():
-        sound = Sound(sound)
-        structure += [Play(sound, end=time) for time in times]
+        structure += [Play(Sound(sound), end=time) for time in times]
     structure = sorted(structure, key=lambda play: play.end)
 
-    for play, last_play in zip(structure, [None] + structure):
+    # TODO: rewrite conflict solving to resolve
+    from collections import defaultdict
+    conflict = defaultdict(list)
+    for play in structure:
         play.end -= CONFIG['precursor_absolute']
-        if last_play and last_play.begin <= play.end <= last_play.end:
-            play.end = last_play.begin - CONFIG['interval_between_conflicts']
+        conflict[play.end].append(play)
 
-    return structure
+    def solve_conflict(substructure):
+        last_begin = None
+        for i in substructure:
+            if last_begin is not None:
+                i.end = last_begin - CONFIG['interval_between_conflicts'] # play this before
+            last_begin = i.begin
+
+    for s in conflict.values():
+        solve_conflict(s)
+
+    return sorted(structure, key=lambda play: play.end)
 
 @dataclass
 class Sound:
@@ -41,7 +65,7 @@ class Sound:
     type: str
 
     def __init__(self, type):
-        files = glob.glob(f'audio/{type}/*')
+        files = glob.glob(f'audios/{type}/*')
         self.type = type
         self.file = random.choice(files) if files else 'audios/placeholder.ogg'
         self.audio = AudioSegment.from_file(self.file, self.file.split('.')[1])
@@ -49,12 +73,20 @@ class Sound:
 @dataclass
 class Play:
     sound: Sound
-    end: float
+    end: int # ms
 
     @property
-    def begin(s): return s.end - (len(s.sound.audio) / MINUTE)
+    def begin(s): return s.end - len(s.sound.audio)
 
-def every(mins, start=0, end=70):
+    def __repr__(self):
+        def time(ms):
+            s = ms // 1000
+            sign = 1 if s >= 0 else -1
+            addon = 1 if s < 0 else 0
+            return f'{ (s//60)+addon :02.0f}:{ (sign*s)%60 :02.0f} - {ms}'
+        return f'Play(sound={self.sound!r}, times: {time(self.begin)} => {time(self.end)}'
+
+def every(mins, start=0, end=64):
     return list(range(start*MINUTE, end*MINUTE, mins*MINUTE))
 
 def at(mins, exact=False):
