@@ -1,28 +1,41 @@
+from dataclasses import dataclass
+
 MINUTE, SECOND = 60_000, 1_000
 
-def every(mins, start=0, end=64):
-    return list(range(start*MINUTE, end*MINUTE, int(mins*MINUTE)))
+@dataclass
+class Timing:
+    at : int
+    offset: int
 
-def at(mins, exact=False):
-    return [mins*MINUTE + (CONFIG['precursor_absolute'] if exact else 0)]
+    @property
+    def time(self): return self.at + self.offset
+
+def every(interval, start=0, end=64*MINUTE, offset=-20*SECOND):
+    assert interval + start + end > 1000, 'Forgot the unit? (*MINUTE, *SECOND)'
+    return [Timing(t, offset) for t in range(start, end, interval)]
+
+def at(time, offset=-20*SECOND):
+    assert time == 0 or time*time > 1000, 'Forgot the unit? (*MINUTE, *SECOND)'
+    return [Timing(time, offset)]
 
 CONFIG = {
+    'audio_folder': 'audios/',
     'interval_between_conflicts':  2 * SECOND,
     # 'precursor_percent':           10,
-    'precursor_absolute':          20 * SECOND,
+    'default_offset':          20 * SECOND,
     'random_humanizer_factor':     0.8,  # 0 is full random, 1 never repeats sounds (unless not enough sounds)
 }
 
 TIMINGS = {
-    'bounty_runes' : every(5, start=5),
-    'game_start' : at(0, exact=True) + at(33, exact=True),
-    'mid_runes' : every(2, start=4, end=12),
-    'outpost_xp' : every(10, start=10),
-    'wards_respawn' : every(270 / 60),
-    'tome' : every(10),
-    'neutral_items_1': at(7),
-    'neutral_items_2': at(17),
-    'neutral_items_3': at(27),
-    'neutral_items_4': at(37),
-    'neutral_items_5': at(60),
+    'game_start'     : at(-30*SECOND, offset=0) + at(33*MINUTE, offset=0),
+    'bounty_runes'   : every(5*MINUTE, start=5*MINUTE),
+    'mid_runes'      : every(2*MINUTE, start=4*MINUTE, end=12*MINUTE),
+    'outpost_xp'     : every(10*MINUTE, start=10*MINUTE, offset=0),
+    'tome'           : every(10*MINUTE, offset=+5*SECOND),
+    'wards_respawn'  : every((135*2)*MINUTE, offset=+5*SECOND),
+    'neutral_items_1': at(7*MINUTE),
+    'neutral_items_2': at(17*MINUTE),
+    'neutral_items_3': at(27*MINUTE),
+    'neutral_items_4': at(37*MINUTE),
+    'neutral_items_5': at(60*MINUTE),
 }

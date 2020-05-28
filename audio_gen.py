@@ -17,7 +17,9 @@ logger.remove()
 logger.add(sys.stdout, colorize=True, format="<green>{elapsed}</green> <level>{message}</level>")
 log = logger.info
 
-def main(seed=None):
+def main(audio_folder=None, seed=None):
+    if audio_folder:
+        CONFIG["audio_folder"] = audio_folder
     seed = seed or random.randint(100, 999)
     structure = make_structure()
     log('Structure ready, will write:')
@@ -26,11 +28,12 @@ def main(seed=None):
     audio = compile(structure)
     filename = f'out-{seed}.ogg'
     log(f'exporting {filename}')
-    audio.export(f'audios/_other/out/{filename}', 'ogg')
+    audio_folder = CONFIG["audio_folder"]
+    audio.export(f'{audio_folder}/_other/out/{filename}', 'ogg')
 
     import shutil
-    log(f'Updating public.ogg - {os.path.getsize("audios/_other/out/" + filename) // (1024):,}KB')
-    shutil.copy(f'audios/_other/out/{filename}', 'audios/_other/out/public.ogg')
+    log(f'Updating public.ogg - {os.path.getsize(f"{audio_folder}/_other/out/" + filename) // (1024):,}KB')
+    shutil.copy(f'{audio_folder}/_other/out/{filename}', f'{audio_folder}/_other/out/public.ogg')
     log('Done')
 
     # breakpoint()
@@ -39,11 +42,13 @@ def compile(structure):
     output = []
     cursor = -1 * MINUTE
     for play in structure:
-        output.append(AudioSegment.silent(play.begin - cursor)) 
+        output.append(AudioSegment.silent(play.begin - cursor))
         print(f'added {(play.begin - cursor) // 1000} seconds of silence')
         output.append(play.sound.audio)
         print(play)
         cursor = play.end
+    output[0].overdub( # add sound in beggining
+            AudioSegment.from_file(f'{CONFIG["audio_folder"]}/placeholder.ogg', 'ogg'))
     def binary_join(a_list): # sequential append is slow on pydub, this binary join is 3x faster
         if len(a_list) == 0: return AudioSegment.empty()
         if len(a_list) == 1: return a_list[0]
@@ -58,15 +63,11 @@ def make_structure(seed=None):
     random.seed(seed)
     structure = []
     for sound, times in TIMINGS.items():
-        structure += [Play(Sound(sound), end=time) for time in times]
+        structure += [Play(Sound(sound), end=timing.time) for timing in times]
     structure = sorted(structure, key=lambda play: play.end)
 
-    from collections import defaultdict
-    conflicts = defaultdict(list)
-    for play in structure:
-        play.end -= CONFIG['precursor_absolute']
-        conflicts[play.end].append(play)
-    for conflict in conflicts.values():
+    conflicts = collect_conflicts(structure)
+    for conflict in conflicts:
         last_begin = None
         for i in conflict:
             if last_begin is not None:
@@ -74,6 +75,21 @@ def make_structure(seed=None):
             last_begin = i.begin
 
     return sorted(structure, key=lambda play: play.end)
+
+def collect_conflicts(intervals):
+    from itertools import combinations
+    conflicts = [(a, b) for a, b in combinations(intervals, 2) if a.intersects(b)]
+    out = []
+    for a, b in conflicts:
+        for conflict_group in out:
+            if a in conflict_group or b in conflict_group:
+                conflict_group.append(a)
+                conflict_group.append(b)
+                break
+        else:
+            out.append([a,b])
+    return out
+
 
 @dataclass
 class SoundType:
@@ -93,7 +109,7 @@ class SoundType:
 
     def shuffle_a_file(self):
         if random.random() > CONFIG['random_humanizer_factor'] or not self.files:
-            self.files = glob.glob(f'audios/{self.name}/*') or ['audios/placeholder.ogg']
+            self.files = glob.glob(f'{CONFIG["audio_folder"]}/{self.name}/*') or [f'{CONFIG["audio_folder"]}/placeholder.ogg']
         file = random.choice(self.files)
         self.files.remove(file)
         return file
@@ -128,6 +144,9 @@ class Play:
             addon = 0 if s >= 0 else 1
             return f'{ (s//60)+addon :02.0f}:{ (sign*s)%60 :02.0f} - {ms}'
         return f'Play(sound={self.sound!r}, times: {time(self.begin)} => {time(self.end)}'
+
+    def intersects(self, other):
+        return other.begin <= self.begin <= other.end or other.begin <= self.end <= other.end
 
 if __name__ == '__main__':
     main()
