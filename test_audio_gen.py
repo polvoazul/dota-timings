@@ -2,7 +2,7 @@ import audio_gen
 import itertools
 
 def test_structure():
-    structure = audio_gen.make_structure()
+    structure = audio_gen.make_structure(seed=42)
     # assert len(structure) == 28
 
     for type in audio_gen.TIMINGS.keys():

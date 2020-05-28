@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import pydub.exceptions
 from pydub import AudioSegment
 from pydub.effects import normalize
 from pprint import pprint
@@ -8,37 +9,53 @@ import random
 from dataclasses import dataclass
 from itertools import zip_longest
 from collections import Counter
+from loguru import logger
+import sys, os
+from config import MINUTE, SECOND, CONFIG, TIMINGS
 
-
-MINUTE, SECOND = 60_000, 1_000
-
+logger.remove()
+logger.add(sys.stdout, colorize=True, format="<green>{elapsed}</green> <level>{message}</level>")
+log = logger.info
 
 def main(seed=None):
     seed = seed or random.randint(100, 999)
-    random.seed(seed)
     structure = make_structure()
-    print('Structure ready, will write:')
+    log('Structure ready, will write:')
     pprint(Counter(p.sound.type for p in structure))
-    print('\ncompiling...\n')
+    log('compiling...\n')
     audio = compile(structure)
     filename = f'out-{seed}.ogg'
-    print(f'exporting {filename}')
-    audio.export(f'out/{filename}', 'ogg')
+    log(f'exporting {filename}')
+    audio.export(f'audios/_other/out/{filename}', 'ogg')
+
+    import shutil
+    log(f'Updating public.ogg - {os.path.getsize("audios/_other/out/" + filename) // (1024):,}KB')
+    shutil.copy(f'audios/_other/out/{filename}', 'audios/_other/out/public.ogg')
+    log('Done')
+
     # breakpoint()
 
 def compile(structure):
-    output = AudioSegment.empty()
     output = []
     cursor = -1 * MINUTE
     for play in structure:
-        output = output.append(AudioSegment.silent(play.begin - cursor), crossfade=0)
+        output.append(AudioSegment.silent(play.begin - cursor)) 
         print(f'added {(play.begin - cursor) // 1000} seconds of silence')
-        output = output.append(play.sound.audio, crossfade=3)
+        output.append(play.sound.audio)
         print(play)
         cursor = play.end
-    return output
+    def binary_join(a_list): # sequential append is slow on pydub, this binary join is 3x faster
+        if len(a_list) == 0: return AudioSegment.empty()
+        if len(a_list) == 1: return a_list[0]
+        half = len(a_list)//2
+        return binary_join(a_list[:half]) + binary_join(a_list[half:])
+    return binary_join(output)
+    # def sequential_join(a_list):
+    #     return functools.reduce(lambda x, y: x+y, a_list)
+    # return sequential_join(output)
 
-def make_structure():
+def make_structure(seed=None):
+    random.seed(seed)
     structure = []
     for sound, times in TIMINGS.items():
         structure += [Play(Sound(sound), end=time) for time in times]
@@ -59,15 +76,41 @@ def make_structure():
     return sorted(structure, key=lambda play: play.end)
 
 @dataclass
+class SoundType:
+    TYPES = {}
+
+    @classmethod
+    def get_type(self, type_name):
+        type = self.TYPES.get(type_name) or SoundType(type_name)
+        self.TYPES[type_name] = type
+        return type
+
+    name: str
+
+    def __init__(self, name):
+        self.name = name
+        self.files = []
+
+    def shuffle_a_file(self):
+        if random.random() > CONFIG['random_humanizer_factor'] or not self.files:
+            self.files = glob.glob(f'audios/{self.name}/*') or ['audios/placeholder.ogg']
+        file = random.choice(self.files)
+        self.files.remove(file)
+        return file
+
+@dataclass
 class Sound:
     file: str
     type: str
 
     def __init__(self, type):
-        files = glob.glob(f'audios/{type}/*')
         self.type = type
-        self.file = random.choice(files) if files else 'audios/placeholder.ogg'
-        self.audio = AudioSegment.from_file(self.file, self.file.split('.')[1])
+        self.file = SoundType.get_type(type).shuffle_a_file()
+        try:
+            self.audio = AudioSegment.from_file(self.file, self.file.split('.')[-1])
+        except pydub.exceptions.CouldntDecodeError:
+            print(f'ERROR: FILE {self.file} not supported')
+            raise
         self.audio = normalize(self.audio)
 
 @dataclass
@@ -81,36 +124,10 @@ class Play:
     def __repr__(self):
         def time(ms):
             s = ms // 1000
-            sign = 1 if s >= 0 else -1
-            addon = 1 if s < 0 else 0
+            sign =  1 if s >= 0 else -1
+            addon = 0 if s >= 0 else 1
             return f'{ (s//60)+addon :02.0f}:{ (sign*s)%60 :02.0f} - {ms}'
         return f'Play(sound={self.sound!r}, times: {time(self.begin)} => {time(self.end)}'
-
-def every(mins, start=0, end=64):
-    return list(range(start*MINUTE, end*MINUTE, int(mins*MINUTE)))
-
-def at(mins, exact=False):
-    return [mins*MINUTE + (CONFIG['precursor_absolute'] if exact else 0)]
-
-CONFIG = {
-    'interval_between_conflicts': 2 * SECOND,
-    'precursor_percent': 10,
-    'precursor_absolute': 20 * SECOND
-}
-
-TIMINGS = {
-    'bounty_runes' : every(5, start=5),
-    'game_start' : at(0, exact=True) + at(33, exact=True),
-    'mid_runes' : every(2, start=4, end=12),
-    'outpost_xp' : every(10, start=10),
-    'wards_respawn' : every(270 / 60),
-    'tome' : every(10),
-    'neutral_items_1': at(7),
-    'neutral_items_2': at(17),
-    'neutral_items_3': at(27),
-    'neutral_items_4': at(37),
-    'neutral_items_5': at(60),
-}
 
 if __name__ == '__main__':
     main()
