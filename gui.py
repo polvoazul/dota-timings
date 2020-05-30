@@ -2,6 +2,7 @@
 from audio_gen import main
 import PySimpleGUI as sg
 import threading, time, sys, queue, os
+import datetime
 
 
 sg.theme('Light Blue 2')
@@ -12,13 +13,12 @@ layout = [
             'Browse', file_types=[('Ogg Vorbis Audio File', '*.ogg')], key='save_browse'
         )],
         [sg.Submit('Generate new audio', key='action'), sg.Cancel('Quit')],
-        [sg.Text('Idle', key='status', size=(80, 5))],
+        [sg.Text('Idle', key='status', size=(80, 15))],
 ]
 
 window = sg.Window('Dota2 Timings Audio Generator', layout)
 status = window['status']
 action = window['action']
-gui_queue = queue.Queue()
 
 def main():
     while True:
@@ -31,6 +31,8 @@ def main():
 
     window.close()
 
+gui_queue = queue.Queue()
+
 def treat_messages():
     while True:
         try: message = gui_queue.get_nowait()
@@ -41,14 +43,6 @@ def treat_messages():
             action.update(disabled=False)
         else:
             status.update(status.get() + message)
-
-def show_error(e):
-    status.update(value= f'ERROR: \n\t{e.__class__}\n\t{e.msg}\n\t{e.file}:{e.line}')
-
-def pack_exception(e):
-    exc_type, exc_obj, exc_tb = sys.exc_info()
-    fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-    e.type, e.file, e.line, e.msg = exc_type, fname, exc_tb.tb_lineno, str(exc_obj)
 
 def go():
     input, output = window['input'].get(), window['output'].get()
@@ -63,18 +57,32 @@ def go():
         pack_exception(e)
         show_error(e)
 
-class END: pass
 def audio_generator(gui_queue, input, output):
     try:
-        import audio_gen
+        import audio_gen, pytz
+        base_time = datetime.datetime.utcnow().replace(tzinfo=pytz.UTC)
+        def handler(msg):
+            gui_queue.put(f'{msg.record["time"] - base_time} {msg.record["message"]}\n')
+        audio_gen.logger.add(handler)
         audio_gen.generate_file(input, output)
         time.sleep(2)  # sleep for a while as a simulation of a long-running computation
         # at the end of the work, before exiting, send a message back to the GUI indicating end
-        gui_queue.put('done')
+        gui_queue.put('Done')
     except Exception as e:
         pack_exception(e)
         gui_queue.put(e)
     finally:
         gui_queue.put(END)
 
-main()
+class END: pass
+
+def show_error(e):
+    status.update(value= f'ERROR: \n\t{e.__class__}\n\t{e.msg}\n\t{e.file}:{e.line}')
+
+def pack_exception(e):
+    exc_type, exc_obj, exc_tb = sys.exc_info()
+    fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+    e.type, e.file, e.line, e.msg = exc_type, fname, exc_tb.tb_lineno, str(exc_obj)
+
+if __name__ == '__main__':
+    main()

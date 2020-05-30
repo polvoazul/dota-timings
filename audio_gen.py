@@ -25,19 +25,21 @@ def main(**kwargs):
     shutil.copy(filepath, out)
 
 def generate_file(audio_folder=None, out_filepath=None, seed=None):
+    log('Start')
     if audio_folder:
         CONFIG["audio_folder"] = audio_folder
     seed = seed or random.randint(100, 999)
+    log('Creating structure')
     structure = make_structure()
-    log('Structure ready, will write:')
+    log('Structure ready')
     pprint(Counter(p.sound.type for p in structure))
-    log('compiling...\n')
+    log('Compiling audio...')
     audio = compile(structure)
     if not out_filepath:
         out_filepath = f'{CONFIG["audio_folder"]}/_other/out/out-{seed}.ogg'
-    log(f'exporting {out_filepath}')
+    log(f'Converting to ogg at {out_filepath}')
     audio.export(out_filepath, 'ogg')
-    log('Done. Wrote {os.path.getsize(out_filepath) // (1024):,}KB')
+    log(f'Done. Wrote {os.path.getsize(out_filepath) // (1024):,}KB')
     return out_filepath
 
 
