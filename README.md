@@ -2,7 +2,11 @@
 
 You will need ffmpeg!
 
+Install python dependencies:
+
     pip install -r requirements.txt
     pip install PySimpleGUI
 
-then run `python gui.py`
+Put some audios in `audios_example` directory.
+
+Then run `python gui.py`
