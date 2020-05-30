@@ -43,11 +43,11 @@ def compile(structure):
     cursor = -1 * MINUTE
     for play in structure:
         output.append(AudioSegment.silent(play.begin - cursor))
-        print(f'added {(play.begin - cursor) // 1000} seconds of silence')
+        print(f'added {(play.begin - cursor) // 1000  } seconds of silence')
         output.append(play.sound.audio)
         print(play)
         cursor = play.end
-    output[0].overdub( # add sound in beggining
+    output[0] = output[0].overlay( # add sound in beggining
             AudioSegment.from_file(f'{CONFIG["audio_folder"]}/placeholder.ogg', 'ogg'))
     def binary_join(a_list): # sequential append is slow on pydub, this binary join is 3x faster
         if len(a_list) == 0: return AudioSegment.empty()
