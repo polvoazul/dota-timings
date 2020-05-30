@@ -11,13 +11,20 @@ from itertools import zip_longest
 from collections import Counter
 from loguru import logger
 import sys, os
+import shutil
 from config import MINUTE, SECOND, CONFIG, TIMINGS
 
 logger.remove()
 logger.add(sys.stdout, colorize=True, format="<green>{elapsed}</green> <level>{message}</level>")
 log = logger.info
 
-def main(audio_folder=None, seed=None):
+def main(**kwargs):
+    filepath = generate_file(**kwargs)
+    out = f'{audio_folder}/_other/out/public.ogg'
+    log(f'Updating {out}')
+    shutil.copy(filepath, out)
+
+def generate_file(audio_folder=None, out_filepath=None, seed=None):
     if audio_folder:
         CONFIG["audio_folder"] = audio_folder
     seed = seed or random.randint(100, 999)
@@ -26,15 +33,13 @@ def main(audio_folder=None, seed=None):
     pprint(Counter(p.sound.type for p in structure))
     log('compiling...\n')
     audio = compile(structure)
-    filename = f'out-{seed}.ogg'
-    log(f'exporting {filename}')
-    audio_folder = CONFIG["audio_folder"]
-    audio.export(f'{audio_folder}/_other/out/{filename}', 'ogg')
+    if not out_filepath:
+        out_filepath = f'{CONFIG["audio_folder"]}/_other/out/out-{seed}.ogg'
+    log(f'exporting {out_filepath}')
+    audio.export(out_filepath, 'ogg')
+    log('Done. Wrote {os.path.getsize(out_filepath) // (1024):,}KB')
+    return out_filepath
 
-    import shutil
-    log(f'Updating public.ogg - {os.path.getsize(f"{audio_folder}/_other/out/" + filename) // (1024):,}KB')
-    shutil.copy(f'{audio_folder}/_other/out/{filename}', f'{audio_folder}/_other/out/public.ogg')
-    log('Done')
 
     # breakpoint()
 
