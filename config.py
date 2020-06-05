@@ -4,7 +4,7 @@ MINUTE, SECOND = 60_000, 1_000
 
 @dataclass
 class Timing:
-    at : int
+    at: int
     offset: int
 
     @property
@@ -29,7 +29,7 @@ CONFIG = {
 TIMINGS = {
     'game_start'     : at(-30*SECOND, offset=0) + at(33*MINUTE, offset=0),
     'bounty_runes'   : every(5*MINUTE,       start=5*MINUTE),
-    'mid_runes'      : every(2*MINUTE,       start=4*MINUTE,  end=12*MINUTE),
+    'mid_runes'      : every(2*MINUTE,       start=4*MINUTE,       end=12*MINUTE),
     'outpost_xp'     : every(10*MINUTE,      start=10*MINUTE,      offset=-40*SECOND),
     'tome'           : every(10*MINUTE,      start=10*MINUTE,      offset=+5*SECOND),
     'wards_respawn'  : every((135*2)*SECOND, start=135*2*SECOND,   offset=+5*SECOND),

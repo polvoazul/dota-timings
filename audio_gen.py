@@ -13,16 +13,21 @@ from loguru import logger
 import sys, os
 import shutil
 from config import MINUTE, SECOND, CONFIG, TIMINGS
+from concurrent.futures import ProcessPoolExecutor
 
 logger.remove()
 logger.add(sys.stdout, colorize=True, format="<green>{elapsed}</green> <level>{message}</level>")
 log = logger.info
 
 def main(**kwargs):
-    filepath = generate_file(**kwargs)
+    audio_folder = CONFIG["audio_folder"]
     out = f'{audio_folder}/_other/out/public.ogg'
-    log(f'Updating {out}')
-    shutil.copy(filepath, out)
+    generate_file(out_filepath=out, **kwargs)
+
+def _process_audio_in_a_play(p):
+    p.sound.audio = process_audio(p.sound.audio)
+    p.sound.foi = True
+    return p
 
 def generate_file(audio_folder=None, out_filepath=None, seed=None):
     log('Start')
@@ -33,12 +38,15 @@ def generate_file(audio_folder=None, out_filepath=None, seed=None):
     structure = make_structure()
     log('Structure ready')
     pprint(Counter(p.sound.type for p in structure))
+    log('Normalizing audio')
+    pool = ProcessPoolExecutor()
+    structure = list(pool.map(_process_audio_in_a_play, structure))
     log('Compiling audio...')
     audio = compile(structure)
     if not out_filepath:
         out_filepath = f'{CONFIG["audio_folder"]}/_other/out/out-{seed}.ogg'
     log(f'Converting to ogg at {out_filepath}')
-    audio.export(out_filepath, 'ogg')
+    audio.export(out_filepath, 'ogg')#, parameters=['-ac', '1'])
     log(f'Done. Wrote {os.path.getsize(out_filepath) // (1024):,}KB')
     return out_filepath
 
@@ -46,21 +54,22 @@ def generate_file(audio_folder=None, out_filepath=None, seed=None):
     # breakpoint()
 
 def compile(structure):
+    CROSSFADE_TIME = 10
     output = []
     cursor = -1 * MINUTE
     for play in structure:
-        output.append(AudioSegment.silent(play.begin - cursor))
+        output.append(AudioSegment.silent(play.begin - cursor + 2*CROSSFADE_TIME))
         print(f'added {(play.begin - cursor) // 1000  } seconds of silence')
         output.append(play.sound.audio)
         print(play)
         cursor = play.end
     output[0] = output[0].overlay( # add sound in beggining
-            AudioSegment.from_file(f'{CONFIG["audio_folder"]}/placeholder.ogg', 'ogg'))
+            process_audio(AudioSegment.from_file(f'{CONFIG["audio_folder"]}/placeholder.ogg', 'ogg')))
     def binary_join(a_list): # sequential append is slow on pydub, this binary join is 3x faster
         if len(a_list) == 0: return AudioSegment.empty()
         if len(a_list) == 1: return a_list[0]
         half = len(a_list)//2
-        return binary_join(a_list[:half]) + binary_join(a_list[half:])
+        return binary_join(a_list[:half]).append(binary_join(a_list[half:]), crossfade=CROSSFADE_TIME)
     return binary_join(output)
     # def sequential_join(a_list):
     #     return functools.reduce(lambda x, y: x+y, a_list)
@@ -72,6 +81,7 @@ def make_structure(seed=None):
     for sound, times in TIMINGS.items():
         structure += [Play(Sound(sound), end=timing.time) for timing in times]
     structure = sorted(structure, key=lambda play: play.end)
+
 
     conflicts = collect_conflicts(structure)
     for conflict in conflicts:
@@ -134,7 +144,9 @@ class Sound:
         except pydub.exceptions.CouldntDecodeError:
             print(f'ERROR: FILE {self.file} not supported')
             raise
-        self.audio = normalize(self.audio)
+
+def process_audio(audio):
+    return audio.set_channels(1).set_frame_rate(44100).set_sample_width(2).compress_dynamic_range().normalize()
 
 @dataclass
 class Play:
